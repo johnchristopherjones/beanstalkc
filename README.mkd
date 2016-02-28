@@ -25,11 +25,11 @@ Here is a short example, to illustrate the flavor of beanstalkc:
 
     >>> import beanstalkc
     >>> beanstalk = beanstalkc.Connection(host='localhost', port=14711)
-    >>> beanstalk.put('hey!')
+    >>> beanstalk.put(b'hey!')
     1
     >>> job = beanstalk.reserve()
-    >>> job.body
-    'hey!'
+    >>> print(job.body)
+    b'hey!'
     >>> job.delete()
 
 For more information, see [the tutorial](TUTORIAL.mkd), which will explain most
