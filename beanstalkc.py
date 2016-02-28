@@ -48,7 +48,7 @@ class SocketError(BeanstalkcException):
 
 class Connection(object):
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, parse_yaml=True,
-                 connect_timeout=socket.getdefaulttimeout()):
+                 connect_timeout=socket.getdefaulttimeout(), encoding=None):
         if parse_yaml is True:
             try:
                 parse_yaml = __import__('yaml').load
@@ -57,6 +57,7 @@ class Connection(object):
                 parse_yaml = False
         self._connect_timeout = connect_timeout
         self._parse_yaml = parse_yaml or (lambda x: x)
+        self._encoding = encoding
         self.host = host
         self.port = port
         self.connect()
@@ -116,16 +117,20 @@ class Connection(object):
         return body
 
     def _interact_value(self, command, expected_ok, expected_err=[]):
-        return self._interact(command, expected_ok, expected_err)[0]
+        val = self._interact(command, expected_ok, expected_err)[0]
+        val = val.decode(self._encoding) if self._encoding else val
+        return val
 
     def _interact_job(self, command, expected_ok, expected_err, reserved=True):
         jid, size = self._interact(command, expected_ok, expected_err)
         body = self._read_body(int(size))
+        body = body.decode(self._encoding) if self._encoding else body
         return Job(self, int(jid), body, reserved)
 
     def _interact_yaml(self, command, expected_ok, expected_err=[]):
         size, = self._interact(command, expected_ok, expected_err)
         body = self._read_body(int(size))
+        body = body.decode(self._encoding) if self._encoding else body
         # n.b., pyyaml presumes body is UTF-8 or UTF-16 encoded
         return self._parse_yaml(body)
 
@@ -140,9 +145,11 @@ class Connection(object):
 
     def put(self, body, priority=DEFAULT_PRIORITY, delay=0, ttr=DEFAULT_TTR):
         """Put a job into the current tube. Returns job id."""
-        if not isinstance(body, bytes):
+        if isinstance(body, str):
+            body = body.encode(self._encoding)
+        elif not isinstance(body, bytes):
             raise ValueError('Job body must be a bytes instance')
-        jid = self._interact_value(b'put %d %d %d %d\r\n%b\r\n' % (
+        jid = self._interact_value(b'put %d %d %d %d\r\n%s\r\n' % (
             priority, delay, ttr, len(body), body),
             [b'INSERTED'],
             [b'JOB_TOO_BIG', b'BURIED', b'DRAINING'])
@@ -207,7 +214,9 @@ class Connection(object):
 
     def use(self, name):
         """Use a given tube."""
-        if not isinstance(name, bytes):
+        if isinstance(name, str) and self._encoding:
+            name = name.encode(self._encoding)
+        elif not isinstance(name, bytes):
             raise ValueError('Tube name must be a bytes instance')
         return self._interact_value(b'use %b\r\n' % name, [b'USING'])
 
@@ -217,13 +226,17 @@ class Connection(object):
 
     def watch(self, name):
         """Watch a given tube."""
-        if not isinstance(name, bytes):
+        if isinstance(name, str) and self._encoding:
+            name = name.encode(self._encoding)
+        elif not isinstance(name, bytes):
             raise ValueError('Tube name must be a bytes instance')
         return int(self._interact_value(b'watch %b\r\n' % name, [b'WATCHING']))
 
     def ignore(self, name):
         """Stop watching a given tube."""
-        if not isinstance(name, bytes):
+        if isinstance(name, str) and self._encoding:
+            name = name.encode(self._encoding)
+        elif not isinstance(name, bytes):
             raise ValueError('Tube name must be a bytes instance')
         try:
             return int(self._interact_value(b'ignore %b\r\n' % name,
@@ -238,15 +251,19 @@ class Connection(object):
 
     def stats_tube(self, name):
         """Return a dict of stats about a given tube."""
-        if not isinstance(name, bytes):
+        if isinstance(name, str) and self._encoding:
+            name = name.encode(self._encoding)
+        elif not isinstance(name, bytes):
             raise ValueError('Tube name must be a bytes instance')
-        return self._interact_yaml(b'stats-tube %b\r\n' % name,
+        return self._interact_yaml(b'stats-tube %s\r\n' % name,
                                    [b'OK'],
                                    [b'NOT_FOUND'])
 
     def pause_tube(self, name, delay):
         """Pause a tube for a given delay time, in seconds."""
-        if not isinstance(name, bytes):
+        if isinstance(name, str) and self._encoding:
+            name = name.encode(self._encoding)
+        elif not isinstance(name, bytes):
             raise ValueError('Tube name must be a bytes instance')
         self._interact(b'pause-tube %b %d\r\n' % (name, delay),
                        [b'PAUSED'],

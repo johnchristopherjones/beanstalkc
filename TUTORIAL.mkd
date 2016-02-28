@@ -21,7 +21,8 @@ To use beanstalkc we have to import the library and set up a connection to an
 (already running) beanstalkd server:
 
     >>> import beanstalkc
-    >>> beanstalk = beanstalkc.Connection(host='localhost', port=14711)
+    >>> beanstalk = beanstalkc.Connection(host='localhost', port=14711,
+    ...                                   encoding='utf8')
 
 If we leave out the `host` and/or `port` parameters, `'localhost'` and `11300`
 would be used as defaults, respectively. There is also a `connect_timeout`
@@ -30,20 +31,24 @@ server to respond to its initial connection attempt. If it is `None`, then
 there will be no timeout; it defaults to the result of your system's
 `socket.getdefaulttimeout()`.
 
+The `encoding` parameter lets us pass and return strings as job bodies.  If
+we leave it out, then job bodies must be put as bytes and will be returned
+as bytes.
+
 
 Basic Operation
 ---------------
 
 Now that we have a connection set up, we can enqueue jobs:
 
-    >>> beanstalk.put(b'hey!')
+    >>> beanstalk.put('hey!')
     1
 
 Or we can request jobs:
 
     >>> job = beanstalk.reserve()
     >>> job.body
-    b'hey!'
+    'hey!'
 
 Once we are done with processing a job, we have to mark it as done, otherwise
 jobs are re-queued by beanstalkd after a "time to run" (120 seconds, per
@@ -72,9 +77,9 @@ bytes is left up to you:
 There is no restriction on what characters you can put in a job body, so they
 can be used to hold arbitrary binary data:
 
-    >>> _ = beanstalk.put(b'\x00\x01\xfe\xff')
+    >>> _ = beanstalk.put('\x00\x01\xfe\xff')
     >>> job = beanstalk.reserve() ; print(repr(job.body)) ; job.delete()
-    b'\x00\x01\xfe\xff'
+    '\x00\x01\xfe\xff'
 
 If you want to send images, just `put` the image data as bytes. If you want
 to send Unicode text, just use `str.encode` to convert it to bytes with
@@ -94,15 +99,15 @@ A beanstalkd client can choose one tube into which its job are put. This is the
 tube "used" by the client. To see what tube you are currently using:
 
     >>> beanstalk.using()
-    b'default'
+    'default'
 
 Unless told otherwise, a client uses the 'default' tube. If you want to use a
 different tube:
 
-    >>> beanstalk.use(b'foo')
-    b'foo'
+    >>> beanstalk.use('foo')
+    'foo'
     >>> beanstalk.using()
-    b'foo'
+    'foo'
 
 If you decide to use a tube, that does not yet exist, the tube is automatically
 created by beanstalkd:
@@ -113,10 +118,10 @@ created by beanstalkd:
 Of course, you can always switch back to the default tube. Tubes that don't have
 any client using or watching, vanish automatically:
 
-    >>> beanstalk.use(b'default')
-    b'default'
+    >>> beanstalk.use('default')
+    'default'
     >>> beanstalk.using()
-    b'default'
+    'default'
     >>> beanstalk.tubes()
     ['default']
 
@@ -128,7 +133,7 @@ tubes are "watched" by the client. To see what tubes you are currently watching:
 
 To watch an additional tube:
 
-    >>> beanstalk.watch(b'bar')
+    >>> beanstalk.watch('bar')
     2
     >>> beanstalk.watching()
     ['default', 'bar']
@@ -141,7 +146,7 @@ watching them:
 
 To stop watching a tube:
 
-    >>> beanstalk.ignore(b'bar')
+    >>> beanstalk.ignore('bar')
     1
     >>> beanstalk.watching()
     ['default']
@@ -149,7 +154,7 @@ To stop watching a tube:
 You can't watch zero tubes. So if you try to ignore the last tube you are
 watching, this is silently ignored:
 
-    >>> beanstalk.ignore(b'default')
+    >>> beanstalk.ignore('default')
     1
     >>> beanstalk.watching()
     ['default']
@@ -173,7 +178,7 @@ Beanstalkd accumulates various statistics at the server, tube and job level.
 Statistical details for a job can only be retrieved during the job's lifecycle.
 So let's create another job:
 
-    >>> beanstalk.put(b'ho?')
+    >>> beanstalk.put('ho?')
     3
 
     >>> job = beanstalk.reserve()
@@ -200,7 +205,7 @@ If you try to access job stats after the job was deleted, you'll get a
 
 Let's have a look at some numbers for the `'default'` tube:
 
-    >>> pprint(beanstalk.stats_tube(b'default'))     # doctest: +ELLIPSIS
+    >>> pprint(beanstalk.stats_tube('default'))     # doctest: +ELLIPSIS
     {...
      'current-jobs-ready': 0,
      'current-jobs-reserved': 0,
@@ -268,7 +273,7 @@ Now let's have a practical look at those new possibilities. For a start, we can
 create a job with a delay. Such a job will only be available for reservation
 once this delay passes:
 
-    >>> beanstalk.put(b'yes!', delay=1)
+    >>> beanstalk.put('yes!', delay=1)
     4
 
     >>> beanstalk.reserve(timeout=0) is None
@@ -276,7 +281,7 @@ once this delay passes:
 
     >>> job = beanstalk.reserve(timeout=1)
     >>> job.body
-    b'yes!'
+    'yes!'
 
 If we are not interested in a job anymore (e.g. after we failed to
 process it), we can simply release the job back to the tube it came from:
@@ -332,7 +337,7 @@ around from our previous examples, so:
 
     >>> job = beanstalk.peek(4)
     >>> job.body
-    b'yes!'
+    'yes!'
 
 Note that this peek did *not* reserve the job:
 
@@ -350,7 +355,7 @@ that would be returned by `reserve` -- the next ready job -- use `peek-ready`:
 
     >>> job = beanstalk.peek_ready()
     >>> job.body
-    b'yes!'
+    'yes!'
 
 Note that you can't release, or bury a job that was not reserved by you. Those
 requests on unreserved jobs are silently ignored:
@@ -370,14 +375,14 @@ You can, though, delete a job that was not reserved by you:
 
 Finally, you can also peek into the special queues for jobs that are delayed:
 
-    >>> _ = beanstalk.put(b'o tempores', delay=120)
+    >>> _ = beanstalk.put('o tempores', delay=120)
     >>> job = beanstalk.peek_delayed()
     >>> job.stats()['state']
     'delayed'
 
 ... or buried:
 
-    >>> _ = beanstalk.put(b'o mores!')
+    >>> _ = beanstalk.put('o mores!')
     >>> job = beanstalk.reserve()
     >>> job.bury()
 
@@ -391,13 +396,13 @@ Job Priorities
 
 Without job priorities, beanstalkd operates as a FIFO queue:
 
-    >>> _ = beanstalk.put(b'1')
-    >>> _ = beanstalk.put(b'2')
+    >>> _ = beanstalk.put('1')
+    >>> _ = beanstalk.put('2')
 
     >>> job = beanstalk.reserve() ; print(job.body) ; job.delete()
-    b'1'
+    1
     >>> job = beanstalk.reserve() ; print(job.body) ; job.delete()
-    b'2'
+    2
 
 If need arises, you can override this behaviour by giving different jobs
 different priorities. There are three hard facts to know about job priorities:
@@ -413,16 +418,16 @@ different priorities. There are three hard facts to know about job priorities:
 
 To create a job with a custom priority, use the keyword-argument `priority`:
 
-    >>> _ = beanstalk.put(b'foo', priority=42)
-    >>> _ = beanstalk.put(b'bar', priority=21)
-    >>> _ = beanstalk.put(b'qux', priority=21)
+    >>> _ = beanstalk.put('foo', priority=42)
+    >>> _ = beanstalk.put('bar', priority=21)
+    >>> _ = beanstalk.put('qux', priority=21)
 
     >>> job = beanstalk.reserve() ; print(job.body) ; job.delete()
-    b'bar'
+    bar
     >>> job = beanstalk.reserve() ; print(job.body) ; job.delete()
-    b'qux'
+    qux
     >>> job = beanstalk.reserve() ; print(job.body) ; job.delete()
-    b'foo'
+    foo
 
 Note how `'bar'` and `'qux'` left the queue before `'foo'`, even though they
 were enqueued well after `'foo'`. Note also that within the same priority jobs
@@ -457,13 +462,14 @@ when creating the `Connection`:
 
     >>> beanstalk = beanstalkc.Connection(host='localhost',
     ...                                   port=14711,
-    ...                                   parse_yaml=False)
+    ...                                   parse_yaml=False,
+    ...                                   encoding='utf8')
 
     >>> beanstalk.tubes()
-    b'---\n- default\n'
+    '---\n- default\n'
 
-    >>> beanstalk.stats_tube(b'default')             # doctest: +ELLIPSIS
-    b'---\nname: default\ncurrent-jobs-urgent: 0\ncurrent-jobs-ready: 0\n...'
+    >>> beanstalk.stats_tube('default')             # doctest: +ELLIPSIS
+    '---\nname: default\ncurrent-jobs-urgent: 0\ncurrent-jobs-ready: 0\n...'
 
     >>> beanstalk.close()
 
@@ -475,13 +481,14 @@ Alternatively, you can also pass a function to be used as YAML parser:
 
     >>> beanstalk = beanstalkc.Connection(host='localhost',
     ...                                   port=14711,
-    ...                                   parse_yaml=lambda x: x.split(b'\n'))
+    ...                                   parse_yaml=lambda x: x.split('\n'),
+    ...                                   encoding='utf8')
 
     >>> beanstalk.tubes()
-    [b'---', b'- default', b'']
+    ['---', '- default', '']
 
-    >>> beanstalk.stats_tube(b'default')             # doctest: +ELLIPSIS
-    [b'---', b'name: default', b'current-jobs-urgent: 0', ...]
+    >>> beanstalk.stats_tube('default')             # doctest: +ELLIPSIS
+    ['---', 'name: default', 'current-jobs-urgent: 0', ...]
 
     >>> beanstalk.close()
 
