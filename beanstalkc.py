@@ -51,6 +51,9 @@ class Connection(object):
                  connect_timeout=socket.getdefaulttimeout()):
         if parse_yaml is True:
             try:
+                # Problem: YAML is utf-8 by default so yaml.load decodes
+                # strings.  However, the rest of the beanstalk interface uses
+                # bytes.
                 parse_yaml = __import__('yaml').load
             except ImportError:
                 logging.error('Failed to load PyYAML, will not parse YAML')
@@ -78,7 +81,7 @@ class Connection(object):
     def close(self):
         """Close connection to server."""
         try:
-            self._socket.sendall('quit\r\n')
+            self._socket.sendall(b'quit\r\n')
         except socket.error:
             pass
         try:
@@ -130,7 +133,7 @@ class Connection(object):
 
     def _interact_peek(self, command):
         try:
-            return self._interact_job(command, ['FOUND'], ['NOT_FOUND'], False)
+            return self._interact_job(command, [b'FOUND'], [b'NOT_FOUND'], False)
         except CommandFailed:
             return None
 
@@ -138,129 +141,129 @@ class Connection(object):
 
     def put(self, body, priority=DEFAULT_PRIORITY, delay=0, ttr=DEFAULT_TTR):
         """Put a job into the current tube. Returns job id."""
-        assert isinstance(body, str), 'Job body must be a str instance'
-        jid = self._interact_value('put %d %d %d %d\r\n%s\r\n' % (
+        assert isinstance(body, bytes), 'Job body must be a bytes instance'
+        jid = self._interact_value(b'put %d %d %d %d\r\n%s\r\n' % (
                                        priority, delay, ttr, len(body), body),
-                                   ['INSERTED'],
-                                   ['JOB_TOO_BIG', 'BURIED', 'DRAINING'])
+                                   [b'INSERTED'],
+                                   [b'JOB_TOO_BIG', b'BURIED', b'DRAINING'])
         return int(jid)
 
     def reserve(self, timeout=None):
         """Reserve a job from one of the watched tubes, with optional timeout
         in seconds. Returns a Job object, or None if the request times out."""
         if timeout is not None:
-            command = 'reserve-with-timeout %d\r\n' % timeout
+            command = b'reserve-with-timeout %d\r\n' % timeout
         else:
-            command = 'reserve\r\n'
+            command = b'reserve\r\n'
         try:
             return self._interact_job(command,
-                                      ['RESERVED'],
-                                      ['DEADLINE_SOON', 'TIMED_OUT'])
+                                      [b'RESERVED'],
+                                      [b'DEADLINE_SOON', b'TIMED_OUT'])
         except CommandFailed:
             exc = sys.exc_info()[1]
             _, status, results = exc.args
-            if status == 'TIMED_OUT':
+            if status == b'TIMED_OUT':
                 return None
-            elif status == 'DEADLINE_SOON':
+            elif status == b'DEADLINE_SOON':
                 raise DeadlineSoon(results)
 
     def kick(self, bound=1):
         """Kick at most bound jobs into the ready queue."""
-        return int(self._interact_value('kick %d\r\n' % bound, ['KICKED']))
+        return int(self._interact_value(b'kick %d\r\n' % bound, [b'KICKED']))
 
     def kick_job(self, jid):
         """Kick a specific job into the ready queue."""
-        self._interact('kick-job %d\r\n' % jid, ['KICKED'], ['NOT_FOUND'])
+        self._interact(b'kick-job %d\r\n' % jid, [b'KICKED'], [b'NOT_FOUND'])
 
     def peek(self, jid):
         """Peek at a job. Returns a Job, or None."""
-        return self._interact_peek('peek %d\r\n' % jid)
+        return self._interact_peek(b'peek %d\r\n' % jid)
 
     def peek_ready(self):
         """Peek at next ready job. Returns a Job, or None."""
-        return self._interact_peek('peek-ready\r\n')
+        return self._interact_peek(b'peek-ready\r\n')
 
     def peek_delayed(self):
         """Peek at next delayed job. Returns a Job, or None."""
-        return self._interact_peek('peek-delayed\r\n')
+        return self._interact_peek(b'peek-delayed\r\n')
 
     def peek_buried(self):
         """Peek at next buried job. Returns a Job, or None."""
-        return self._interact_peek('peek-buried\r\n')
+        return self._interact_peek(b'peek-buried\r\n')
 
     def tubes(self):
         """Return a list of all existing tubes."""
-        return self._interact_yaml('list-tubes\r\n', ['OK'])
+        return self._interact_yaml(b'list-tubes\r\n', [b'OK'])
 
     def using(self):
         """Return the tube currently being used."""
-        return self._interact_value('list-tube-used\r\n', ['USING'])
+        return self._interact_value(b'list-tube-used\r\n', [b'USING'])
 
     def use(self, name):
         """Use a given tube."""
-        return self._interact_value('use %s\r\n' % name, ['USING'])
+        return self._interact_value(b'use %s\r\n' % name, [b'USING'])
 
     def watching(self):
         """Return a list of all tubes being watched."""
-        return self._interact_yaml('list-tubes-watched\r\n', ['OK'])
+        return self._interact_yaml(b'list-tubes-watched\r\n', [b'OK'])
 
     def watch(self, name):
         """Watch a given tube."""
-        return int(self._interact_value('watch %s\r\n' % name, ['WATCHING']))
+        return int(self._interact_value(b'watch %s\r\n' % name, [b'WATCHING']))
 
     def ignore(self, name):
         """Stop watching a given tube."""
         try:
-            return int(self._interact_value('ignore %s\r\n' % name,
-                                            ['WATCHING'],
-                                            ['NOT_IGNORED']))
+            return int(self._interact_value(b'ignore %s\r\n' % name,
+                                            [b'WATCHING'],
+                                            [b'NOT_IGNORED']))
         except CommandFailed:
             return 1
 
     def stats(self):
         """Return a dict of beanstalkd statistics."""
-        return self._interact_yaml('stats\r\n', ['OK'])
+        return self._interact_yaml(b'stats\r\n', [b'OK'])
 
     def stats_tube(self, name):
         """Return a dict of stats about a given tube."""
-        return self._interact_yaml('stats-tube %s\r\n' % name,
-                                   ['OK'],
-                                   ['NOT_FOUND'])
+        return self._interact_yaml(b'stats-tube %s\r\n' % name,
+                                   [b'OK'],
+                                   [b'NOT_FOUND'])
 
     def pause_tube(self, name, delay):
         """Pause a tube for a given delay time, in seconds."""
-        self._interact('pause-tube %s %d\r\n' % (name, delay),
-                       ['PAUSED'],
-                       ['NOT_FOUND'])
+        self._interact(b'pause-tube %s %d\r\n' % (name, delay),
+                       [b'PAUSED'],
+                       [b'NOT_FOUND'])
 
     # -- job interactors --
 
     def delete(self, jid):
         """Delete a job, by job id."""
-        self._interact('delete %d\r\n' % jid, ['DELETED'], ['NOT_FOUND'])
+        self._interact(b'delete %d\r\n' % jid, [b'DELETED'], [b'NOT_FOUND'])
 
     def release(self, jid, priority=DEFAULT_PRIORITY, delay=0):
         """Release a reserved job back into the ready queue."""
-        self._interact('release %d %d %d\r\n' % (jid, priority, delay),
-                       ['RELEASED', 'BURIED'],
-                       ['NOT_FOUND'])
+        self._interact(b'release %d %d %d\r\n' % (jid, priority, delay),
+                       [b'RELEASED', b'BURIED'],
+                       [b'NOT_FOUND'])
 
     def bury(self, jid, priority=DEFAULT_PRIORITY):
         """Bury a job, by job id."""
-        self._interact('bury %d %d\r\n' % (jid, priority),
-                       ['BURIED'],
-                       ['NOT_FOUND'])
+        self._interact(b'bury %d %d\r\n' % (jid, priority),
+                       [b'BURIED'],
+                       [b'NOT_FOUND'])
 
     def touch(self, jid):
         """Touch a job, by job id, requesting more time to work on a reserved
         job before it expires."""
-        self._interact('touch %d\r\n' % jid, ['TOUCHED'], ['NOT_FOUND'])
+        self._interact(b'touch %d\r\n' % jid, [b'TOUCHED'], [b'NOT_FOUND'])
 
     def stats_job(self, jid):
         """Return a dict of stats about a job, by job id."""
-        return self._interact_yaml('stats-job %d\r\n' % jid,
-                                   ['OK'],
-                                   ['NOT_FOUND'])
+        return self._interact_yaml(b'stats-job %d\r\n' % jid,
+                                   [b'OK'],
+                                   [b'NOT_FOUND'])
 
 
 class Job(object):

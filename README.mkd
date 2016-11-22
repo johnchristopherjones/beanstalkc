@@ -9,8 +9,11 @@ See Appendix A of the tutorial for details.
 
 beanstalkc is pure Python, and is compatible with [eventlet][] and [gevent][].
 
-beanstalkc is currently only supported on Python 2 and automatically tested
-against Python 2.6 and 2.7. Python 3 is not (yet) supported.
+This fork of beanstalkc currently only supports Python 3.
+
+Because the beanstalk protocol returns YAML for some operations, namely
+`tubes`, `watching`, `stats`, `stats_tube`, and `stats_job`, these methods
+will return strings instead of bytes.
 
 [beanstalkd]: http://kr.github.com/beanstalkd/
 [eventlet]: http://eventlet.net/
@@ -25,11 +28,11 @@ Here is a short example, to illustrate the flavor of beanstalkc:
 
     >>> import beanstalkc
     >>> beanstalk = beanstalkc.Connection(host='localhost', port=14711)
-    >>> beanstalk.put('hey!')
+    >>> beanstalk.put(b'hey!')
     1
     >>> job = beanstalk.reserve()
     >>> job.body
-    'hey!'
+    b'hey!'
     >>> job.delete()
 
 For more information, see [the tutorial](TUTORIAL.mkd), which will explain most
